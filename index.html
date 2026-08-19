@@ -168,7 +168,7 @@
   <div class="masthead">
     <div>
       <h1>카드 지출 통장</h1>
-      <div class="sub">신한 · 국민 · 삼성 · 현대 · 롯데 통합 관리</div>
+      <div class="sub">신한 · 국민 · 삼성 · 현대 · 롯데 · 카카오페이 통합 관리</div>
     </div>
     <div style="display:flex; gap:8px; align-items:center;">
       <button class="icon-btn" id="settingsBtn" title="설정" style="box-shadow:none; font-size:16px;">⚙</button>
@@ -498,6 +498,27 @@ function parseKookmin(json){
   }
   return out;
 }
+// 카카오페이 다운로드 내역: 날짜, 사용처, 금액(+/-원 표시), 상태
+function parseKakaoPay(json){
+  const header = json[0].map(h => String(h||'').trim());
+  const idx = {
+    date: header.indexOf('날짜'), merchant: header.indexOf('사용처'),
+    amount: header.indexOf('금액'), status: header.indexOf('상태')
+  };
+  if(idx.date < 0 || idx.merchant < 0 || idx.amount < 0) return null;
+  const out = [];
+  for(let i=1;i<json.length;i++){
+    const r = json[i];
+    if(!r || !r[idx.date]) continue;
+    const amtStr = String(r[idx.amount]||'').trim();
+    if(amtStr.indexOf('-') !== 0) continue; // '+'(받은 돈)는 지출이 아니므로 제외
+    const amount = parseFloat(amtStr.replace(/[^0-9.]/g,'')) || 0;
+    const cancelled = idx.status>=0 && String(r[idx.status]||'').trim() === '취소';
+    out.push({ date: normDate(r[idx.date]), card: '카카오페이', merchant: String(r[idx.merchant]||'').trim(),
+      amount, cancelled, approvalNo: '' });
+  }
+  return out;
+}
 function parseGeneric(json, fileName){
   let headerRow = -1, idx = {};
   const dateKeys = ['거래일','이용일','승인일','거래일자','이용일자','이용날짜'];
@@ -541,6 +562,7 @@ function parseWorkbook(wb, fileName){
     if(!json.length) return;
     let rows = parseShinhan(json);
     if(!rows) rows = parseKookmin(json);
+    if(!rows) rows = parseKakaoPay(json);
     if(!rows) rows = parseGeneric(json, fileName);
     if(rows && rows.length) all = all.concat(rows);
   });
