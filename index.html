@@ -542,7 +542,7 @@ function parseKookminBank(json){
       headerRow = i;
       idx = { date: dateI, out: outI, in: inI,
         counter: cells.findIndex(c => c.indexOf('보낸분') >= 0 || c.indexOf('받는분') >= 0),
-        memo: cells.findIndex(c => c === '적요') };
+        desc: cells.findIndex(c => c === '적요') };
       break;
     }
   }
@@ -556,10 +556,14 @@ function parseKookminBank(json){
     if(outAmt <= 0 && inAmt <= 0) continue;
     const isIncome = inAmt > 0;
     const amount = isIncome ? inAmt : outAmt;
+    const desc = idx.desc >= 0 ? String(r[idx.desc]||'').trim() : '';
     let merchant = idx.counter >= 0 ? String(r[idx.counter]||'').trim() : '';
-    if(!merchant && idx.memo >= 0) merchant = String(r[idx.memo]||'').trim();
-    if(!merchant) merchant = '거래';
-    out.push({ date: normDate(r[idx.date]), card: 'KB국민은행', merchant, amount, cancelled:false, approvalNo:'', type: isIncome ? '수입' : '지출' });
+    if(!merchant) merchant = desc || '거래';
+    // FBS 출금/CMS 공동 등은 은행이 카드사·간편결제사에 대금을 일괄 청구하는 자동이체 방식.
+    // 해당 카드/페이의 개별 명세서를 따로 올렸다면 여기서 또 잡히면 이중 계산될 수 있어 표시해둠.
+    const isSettlement = !isIncome && /FBS|CMS/i.test(desc) && /카드|페이/.test(merchant);
+    const memo = isSettlement ? '⚠️ 카드·페이 대금 자동이체로 보여요. 해당 카드/페이 명세서를 따로 올리셨다면 중복일 수 있어요 — 확인 후 필요하면 삭제하세요.' : '';
+    out.push({ date: normDate(r[idx.date]), card: 'KB국민은행', merchant, amount, cancelled:false, approvalNo:'', type: isIncome ? '수입' : '지출', memo });
   }
   return out;
 }
