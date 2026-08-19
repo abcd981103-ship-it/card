@@ -1,4 +1,4 @@
-const CACHE_NAME = 'card-tongjang-shell-v3';
+const CACHE_NAME = 'card-tongjang-shell-v4';
 const SHELL_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
