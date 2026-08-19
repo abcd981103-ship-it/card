@@ -222,7 +222,9 @@
     </div>
 
     <div class="metrics">
-      <div class="metric"><div class="label">총 사용금액</div><div class="value" id="mTotal">-</div></div>
+      <div class="metric"><div class="label">총 지출</div><div class="value" id="mTotal">-</div></div>
+      <div class="metric"><div class="label">총 수입</div><div class="value" id="mIncome" style="color:#1BAF7A;">-</div></div>
+      <div class="metric"><div class="label">순증감</div><div class="value" id="mNet">-</div></div>
       <div class="metric"><div class="label">총 건수</div><div class="value" id="mCount">-</div></div>
       <div class="metric"><div class="label">건당 평균</div><div class="value" id="mAvg">-</div></div>
       <div class="metric"><div class="label">일평균</div><div class="value" id="mDaily">-</div></div>
@@ -329,6 +331,14 @@
   <div class="modal">
     <h3 id="txModalTitle">거래 추가</h3>
     <input type="hidden" id="txId">
+    <div class="full" style="margin-bottom:10px;">
+      <label class="flabel">구분</label>
+      <div class="tabs" style="width:100%; box-shadow:none; border:1px solid var(--line);">
+        <button type="button" class="tab-btn active" id="txTypeExpenseBtn" style="flex:1;" onclick="setTxType('지출')">지출</button>
+        <button type="button" class="tab-btn" id="txTypeIncomeBtn" style="flex:1;" onclick="setTxType('수입')">수입</button>
+      </div>
+      <input type="hidden" id="txType" value="지출">
+    </div>
     <div class="fgrid">
       <div>
         <label class="flabel">날짜</label>
@@ -469,7 +479,7 @@ function parseShinhan(json){
     const cancelled = (idx.cancel>=0 && String(r[idx.cancel]||'').trim() !== '') ||
                        (idx.status>=0 && String(r[idx.status]||'').trim() === '취소');
     out.push({ date: normDate(r[idx.date]), card: '신한카드', merchant: String(r[idx.merchant]||'').trim(),
-      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '' });
+      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '', type: '지출' });
   }
   return out;
 }
@@ -494,7 +504,7 @@ function parseKookmin(json){
     if(!r || !r[idx.date]) continue;
     const cancelled = idx.status>=0 && String(r[idx.status]||'').trim() === '승인취소';
     out.push({ date: normDate(r[idx.date]), card: 'KB국민카드', merchant: String(r[idx.merchant]||'').trim(),
-      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '' });
+      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '', type: '지출' });
   }
   return out;
 }
@@ -511,11 +521,45 @@ function parseKakaoPay(json){
     const r = json[i];
     if(!r || !r[idx.date]) continue;
     const amtStr = String(r[idx.amount]||'').trim();
-    if(amtStr.indexOf('-') !== 0) continue; // '+'(받은 돈)는 지출이 아니므로 제외
+    const isIncome = amtStr.indexOf('+') === 0;
+    if(!isIncome && amtStr.indexOf('-') !== 0) continue; // 부호 없는 이상값 무시
     const amount = parseFloat(amtStr.replace(/[^0-9.]/g,'')) || 0;
     const cancelled = idx.status>=0 && String(r[idx.status]||'').trim() === '취소';
     out.push({ date: normDate(r[idx.date]), card: '카카오페이', merchant: String(r[idx.merchant]||'').trim(),
-      amount, cancelled, approvalNo: '' });
+      amount, cancelled, approvalNo: '', type: isIncome ? '수입' : '지출' });
+  }
+  return out;
+}
+// KB국민은행 계좌 거래내역: 거래일시, 적요, 보낸분/받는분, 출금액, 입금액
+function parseKookminBank(json){
+  let headerRow = -1, idx = {};
+  for(let i=0;i<Math.min(json.length,10);i++){
+    const cells = (json[i]||[]).map(h => String(h||'').replace(/\s+/g,''));
+    const dateI = cells.findIndex(c => c === '거래일시');
+    const outI = cells.findIndex(c => c === '출금액');
+    const inI = cells.findIndex(c => c === '입금액');
+    if(dateI >= 0 && outI >= 0 && inI >= 0){
+      headerRow = i;
+      idx = { date: dateI, out: outI, in: inI,
+        counter: cells.findIndex(c => c.indexOf('보낸분') >= 0 || c.indexOf('받는분') >= 0),
+        memo: cells.findIndex(c => c === '적요') };
+      break;
+    }
+  }
+  if(headerRow < 0) return null;
+  const out = [];
+  for(let i=headerRow+1;i<json.length;i++){
+    const r = json[i];
+    if(!r || !r[idx.date]) continue;
+    const outAmt = parseFloat(r[idx.out]) || 0;
+    const inAmt = parseFloat(r[idx.in]) || 0;
+    if(outAmt <= 0 && inAmt <= 0) continue;
+    const isIncome = inAmt > 0;
+    const amount = isIncome ? inAmt : outAmt;
+    let merchant = idx.counter >= 0 ? String(r[idx.counter]||'').trim() : '';
+    if(!merchant && idx.memo >= 0) merchant = String(r[idx.memo]||'').trim();
+    if(!merchant) merchant = '거래';
+    out.push({ date: normDate(r[idx.date]), card: 'KB국민은행', merchant, amount, cancelled:false, approvalNo:'', type: isIncome ? '수입' : '지출' });
   }
   return out;
 }
@@ -551,7 +595,7 @@ function parseGeneric(json, fileName){
     const cancelText = idx.cancel>=0 ? String(r[idx.cancel]||'').trim() : '';
     const cancelled = cancelText !== '' && cancelText !== '0' && cancelText.indexOf('정상')<0;
     out.push({ date: normDate(r[idx.date]), card: cardLabel, merchant: String(r[idx.merchant]||'').trim(),
-      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '' });
+      amount: parseFloat(r[idx.amount])||0, cancelled, approvalNo: idx.approval>=0 ? String(r[idx.approval]||'') : '', type: '지출' });
   }
   return out;
 }
@@ -562,6 +606,7 @@ function parseWorkbook(wb, fileName){
     if(!json.length) return;
     let rows = parseShinhan(json);
     if(!rows) rows = parseKookmin(json);
+    if(!rows) rows = parseKookminBank(json);
     if(!rows) rows = parseKakaoPay(json);
     if(!rows) rows = parseGeneric(json, fileName);
     if(rows && rows.length) all = all.concat(rows);
@@ -723,7 +768,7 @@ function renderCompare(){
   const curMonth = monthSel==='all' ? months[months.length-1] : monthSel;
   const prevMonth = prevMonthStr(curMonth);
 
-  const sum = (m) => byCard.filter(r => r.date.slice(0,7)===m && r.valid>0).reduce((s,r)=>s+r.valid,0);
+  const sum = (m) => byCard.filter(r => r.date.slice(0,7)===m && r.valid>0 && r.type!=='수입').reduce((s,r)=>s+r.valid,0);
   const curTotal = sum(curMonth);
   const prevTotal = sum(prevMonth);
 
@@ -755,9 +800,12 @@ function renderCompare(){
 function renderDashboard(){
   renderCompare();
   const filtered = getFiltered();
-  const valid = filtered.filter(r => r.valid > 0);
+  const valid = filtered.filter(r => r.valid > 0 && r.type !== '수입');
+  const income = filtered.filter(r => r.valid > 0 && r.type === '수입');
 
   const total = valid.reduce((s,r)=>s+r.valid,0);
+  const incomeTotal = income.reduce((s,r)=>s+r.valid,0);
+  const net = incomeTotal - total;
   const count = valid.length;
   const avg = count ? total/count : 0;
   const days = new Set(valid.map(r=>r.date)).size || 1;
@@ -765,13 +813,17 @@ function renderDashboard(){
   const maxAmt = valid.length ? Math.max(...valid.map(r=>r.valid)) : 0;
 
   document.getElementById('mTotal').textContent = fmtWon(total);
+  document.getElementById('mIncome').textContent = fmtWon(incomeTotal);
+  const netEl = document.getElementById('mNet');
+  netEl.textContent = (net >= 0 ? '+' : '-') + fmtWon(Math.abs(net));
+  netEl.style.color = net >= 0 ? '#1BAF7A' : '#F04452';
   document.getElementById('mCount').textContent = count + '건';
   document.getElementById('mAvg').textContent = fmtWon(avg);
   document.getElementById('mDaily').textContent = fmtWon(dailyAvg);
   document.getElementById('mMax').textContent = fmtWon(maxAmt);
 
   const monthMap = {};
-  filtered.forEach(r => { const m=r.date.slice(0,7); monthMap[m]=(monthMap[m]||0)+r.valid; });
+  filtered.filter(r => r.type !== '수입').forEach(r => { const m=r.date.slice(0,7); monthMap[m]=(monthMap[m]||0)+r.valid; });
   const monthLabels = Object.keys(monthMap).sort();
   const monthData = monthLabels.map(m => Math.round(monthMap[m]));
   if(monthChartRef) monthChartRef.destroy();
@@ -837,20 +889,23 @@ function renderList(){
 
   document.getElementById('txnTable').innerHTML = pageRows.map(r => {
     const cancelled = r.valid === 0 && r.amount !== 0;
+    const isIncome = r.type === '수입';
     const color = colorFor(r.category);
     const memoDot = r.memo ? '<span class="memo-dot" title="'+String(r.memo).replace(/"/g,'')+'"></span>' : '';
+    const amtDisplay = (isIncome ? '+' : '') + fmtWon(r.amount);
+    const amtStyle = isIncome ? 'color:#1BAF7A;' : '';
     return `<tr class="${cancelled?'cancel':''}">
       <td class="desktop-only">${r.date}</td>
       <td class="desktop-only">${r.dow||''}</td>
       <td class="desktop-only">${(r.card||'').replace('카드','')}</td>
       <td>
-        <div class="mrow-top"><span class="mrow-name">${r.merchant}${memoDot}</span><span class="mrow-amt">${fmtWon(r.amount)}</span></div>
-        <div class="mrow-meta"><span>${r.date} (${r.dow||''})</span><span>·</span><span>${(r.card||'').replace('카드','')}</span></div>
+        <div class="mrow-top"><span class="mrow-name">${r.merchant}${memoDot}</span><span class="mrow-amt" style="${amtStyle}">${amtDisplay}</span></div>
+        <div class="mrow-meta"><span>${r.date} (${r.dow||''})</span><span>·</span><span>${(r.card||'').replace('카드','')}</span>${isIncome?'<span>· 수입</span>':''}</div>
         ${r.memo ? `<div class="mrow-memo">📝 ${r.memo}</div>` : ''}
         <span style="display:none;">${r.merchant}</span>
       </td>
-      <td class="desktop-only"><span class="cat-chip" style="background:${color}22; color:${color};">${r.category}</span></td>
-      <td class="amt desktop-only">${fmtWon(r.amount)}</td>
+      <td class="desktop-only"><span class="cat-chip" style="background:${color}22; color:${color};">${r.category}</span>${isIncome?' <span class="cat-chip" style="background:#1BAF7A22; color:#1BAF7A;">수입</span>':''}</td>
+      <td class="amt desktop-only" style="${amtStyle}">${amtDisplay}</td>
       <td><div class="row-actions">
         <button class="icon-btn" title="수정" onclick="openEditTx('${r.id}')">✎</button>
         <button class="icon-btn" title="삭제" onclick="confirmDeleteTx('${r.id}')">✕</button>
@@ -867,10 +922,10 @@ function renderList(){
 function exportCSV(){
   const filtered = [...getFiltered()].sort((a,b) => b.date.localeCompare(a.date));
   if(!filtered.length){ alert('내보낼 데이터가 없습니다.'); return; }
-  const header = ['날짜','요일','카드사','가맹점명','카테고리','금액','유효금액','메모'];
+  const header = ['날짜','요일','카드사','가맹점명','카테고리','금액','유효금액','구분','메모'];
   const lines = [header.join(',')];
   filtered.forEach(r => {
-    const row = [r.date, r.dow, r.card, r.merchant, r.category, r.amount, r.valid, r.memo||'']
+    const row = [r.date, r.dow, r.card, r.merchant, r.category, r.amount, r.valid, r.type||'지출', r.memo||'']
       .map(v => `"${String(v).replace(/"/g,'""')}"`);
     lines.push(row.join(','));
   });
@@ -885,9 +940,15 @@ function exportCSV(){
 }
 
 // ---------- 거래 추가/수정 모달 ----------
+function setTxType(type){
+  document.getElementById('txType').value = type;
+  document.getElementById('txTypeExpenseBtn').classList.toggle('active', type==='지출');
+  document.getElementById('txTypeIncomeBtn').classList.toggle('active', type==='수입');
+}
 function openAddTx(){
   document.getElementById('txModalTitle').textContent = '거래 추가';
   document.getElementById('txId').value = '';
+  setTxType('지출');
   document.getElementById('txDate').value = new Date().toISOString().slice(0,10);
   document.getElementById('txCard').value = '현금';
   document.getElementById('txMerchant').value = '';
@@ -904,6 +965,7 @@ function openEditTx(id){
   if(!r) return;
   document.getElementById('txModalTitle').textContent = '거래 수정';
   document.getElementById('txId').value = r.id;
+  setTxType(r.type === '수입' ? '수입' : '지출');
   document.getElementById('txDate').value = r.date;
   document.getElementById('txCard').value = r.card;
   document.getElementById('txMerchant').value = r.merchant;
@@ -925,6 +987,7 @@ function saveTxModal(){
   const amount = parseFloat(document.getElementById('txAmount').value);
   const category = document.getElementById('txCategory').value.trim();
   const memo = document.getElementById('txMemo').value.trim();
+  const type = document.getElementById('txType').value;
   const cancelled = document.getElementById('txCancelled').checked;
   const statusEl = document.getElementById('txModalStatus');
 
@@ -937,11 +1000,11 @@ function saveTxModal(){
   statusEl.className = 'status';
 
   if(id){
-    apiPost('updateTransaction', { id, updates: { date, card, merchant, amount, category: category || undefined, memo, cancelled } })
+    apiPost('updateTransaction', { id, updates: { date, card, merchant, amount, category: category || undefined, memo, type, cancelled } })
       .then(() => { closeTxModal(); loadData(); })
       .catch((err) => { statusEl.textContent = '오류: ' + err.message; statusEl.className='status err'; });
   } else {
-    apiPost('addManualTransaction', { tx: { date, card, merchant, amount, category: category || undefined, memo, cancelled } })
+    apiPost('addManualTransaction', { tx: { date, card, merchant, amount, category: category || undefined, memo, type, cancelled } })
       .then(() => { closeTxModal(); loadData(); })
       .catch((err) => { statusEl.textContent = '오류: ' + err.message; statusEl.className='status err'; });
   }
@@ -971,12 +1034,12 @@ function runReclassify(){
 // ---------- 예산 탭 ----------
 let budgetCache = {};
 function renderBudget(){
-  const filtered = rawRows.filter(r => r.valid > 0);
+  const filtered = rawRows.filter(r => r.valid > 0 && r.type !== '수입');
   const now = new Date();
   const thisMonth = now.toISOString().slice(0,7);
   const spentByCat = {};
   filtered.filter(r => r.date.slice(0,7) === thisMonth).forEach(r => { spentByCat[r.category] = (spentByCat[r.category]||0) + r.valid; });
-  const allCats = [...new Set(rawRows.map(r => r.category))].sort();
+  const allCats = [...new Set(filtered.map(r => r.category))].sort();
 
   apiGet('getBudgets').then((budgets) => {
     budgetCache = budgets || {};
@@ -1017,7 +1080,7 @@ function saveBudgetForm(){
 
 // ---------- 구독 탭 ----------
 function renderSubs(){
-  const valid = rawRows.filter(r => r.valid > 0);
+  const valid = rawRows.filter(r => r.valid > 0 && r.type !== '수입');
   const byMerchant = {};
   valid.forEach(r => {
     if(!byMerchant[r.merchant]) byMerchant[r.merchant] = [];
