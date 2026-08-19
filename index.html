@@ -157,7 +157,7 @@
     .mrow-amt{ font-family:'Roboto Mono', monospace; font-weight:700; font-size:14px; }
     .mrow-meta{ display:flex; align-items:center; gap:6px; margin-top:4px; color:var(--ink-soft); font-size:11.5px; }
     .mrow-memo{ font-size:11.5px; color:var(--ink-mute); margin-top:4px; }
-    td.desktop-only{ display:none; }
+    td.desktop-only, .merchant-text{ display:none; }
   }
   @media (min-width:681px){ .mrow-top, .mrow-meta, .mrow-memo{ display:none; } }
 </style>
@@ -898,10 +898,10 @@ function renderList(){
       <td class="desktop-only">${r.dow||''}</td>
       <td class="desktop-only">${(r.card||'').replace('카드','')}</td>
       <td>
+        <span class="merchant-text">${r.merchant}${memoDot}</span>
         <div class="mrow-top"><span class="mrow-name">${r.merchant}${memoDot}</span><span class="mrow-amt" style="${amtStyle}">${amtDisplay}</span></div>
         <div class="mrow-meta"><span>${r.date} (${r.dow||''})</span><span>·</span><span>${(r.card||'').replace('카드','')}</span>${isIncome?'<span>· 수입</span>':''}</div>
         ${r.memo ? `<div class="mrow-memo">📝 ${r.memo}</div>` : ''}
-        <span style="display:none;">${r.merchant}</span>
       </td>
       <td class="desktop-only"><span class="cat-chip" style="background:${color}22; color:${color};">${r.category}</span>${isIncome?' <span class="cat-chip" style="background:#1BAF7A22; color:#1BAF7A;">수입</span>':''}</td>
       <td class="amt desktop-only" style="${amtStyle}">${amtDisplay}</td>
