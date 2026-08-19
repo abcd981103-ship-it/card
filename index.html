@@ -187,7 +187,7 @@
   </div>
   <div class="status" id="statusMsg">불러오는 중...</div>
 
-  <div class="tabs">
+  <div class="tabs" id="mainTabs">
     <button class="tab-btn active" data-tab="dash">대시보드</button>
     <button class="tab-btn" data-tab="list">내역</button>
     <button class="tab-btn" data-tab="budget">예산</button>
@@ -675,7 +675,6 @@ function showOfflineBanner(show){
 function loadData(){
   if(!getApiUrl()){
     fallbackToCache('아직 연결 설정이 안 되어 있습니다. 설정(⚙)에서 Apps Script 주소를 입력해주세요.');
-    setStatus('설정(⚙)에서 Apps Script 주소를 먼저 입력해주세요.', true);
     return;
   }
   setStatus('불러오는 중...');
@@ -1108,7 +1107,7 @@ function renderSubs(){
 // ---------- 탭 전환 ----------
 function switchTab(tab){
   currentTab = tab;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('#mainTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('viewDash').classList.toggle('active', tab==='dash');
   document.getElementById('viewList').classList.toggle('active', tab==='list');
   document.getElementById('viewBudget').classList.toggle('active', tab==='budget');
@@ -1129,7 +1128,7 @@ document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('monthSel').addEventListener('change', () => { listPage = 1; render(); });
 document.getElementById('cardSel').addEventListener('change', () => { listPage = 1; render(); });
 document.getElementById('searchBox').addEventListener('input', () => { listPage = 1; render(); });
-document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+document.querySelectorAll('#mainTabs .tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 document.getElementById('addTxBtn').addEventListener('click', openAddTx);
 document.getElementById('reclassifyBtn').addEventListener('click', runReclassify);
