@@ -267,6 +267,7 @@
       <button class="primary sm" id="addTxBtn">+ 거래 추가</button>
       <button class="sm" id="reclassifyBtn">카테고리 재분류</button>
       <button class="sm" id="exportBtn">CSV 내보내기</button>
+      <button class="sm danger" id="deleteCardBtn" style="display:none;">이 카드사 전체 삭제</button>
     </div>
     <div class="panel" style="padding:6px; overflow:hidden;">
       <div class="scrollbox">
@@ -755,6 +756,7 @@ function render(){
   else if(currentTab === 'list') renderList();
   else if(currentTab === 'budget') renderBudget();
   else if(currentTab === 'subs') renderSubs();
+  updateDeleteCardBtn();
 }
 
 function renderCompare(){
@@ -1108,6 +1110,32 @@ function renderSubs(){
   </div>`).join('') || '<div class="empty">반복 결제로 보이는 거래가 아직 없습니다.</div>';
 }
 
+function updateDeleteCardBtn(){
+  const btn = document.getElementById('deleteCardBtn');
+  const card = document.getElementById('cardSel').value;
+  if(card === 'all' || currentTab !== 'list'){
+    btn.style.display = 'none';
+    return;
+  }
+  const count = rawRows.filter(r => r.card === card).length;
+  btn.textContent = `"${card}" 전체 삭제 (${count}건)`;
+  btn.style.display = count ? 'inline-block' : 'none';
+}
+function deleteByCard(){
+  const card = document.getElementById('cardSel').value;
+  if(card === 'all') return;
+  const count = rawRows.filter(r => r.card === card).length;
+  if(!confirm(`"${card}" 거래 ${count}건을 전부 삭제할까요?\n되돌릴 수 없습니다.`)) return;
+  setStatus(`"${card}" 거래 삭제 중...`);
+  apiPost('deleteByCard', { card })
+    .then((res) => {
+      setStatus(`"${card}" ${res.removed}건 삭제 완료`);
+      document.getElementById('cardSel').value = 'all';
+      loadData();
+    })
+    .catch((err) => setStatus('삭제 오류: ' + err.message, true));
+}
+
 // ---------- 탭 전환 ----------
 function switchTab(tab){
   currentTab = tab;
@@ -1118,6 +1146,7 @@ function switchTab(tab){
   document.getElementById('viewSubs').classList.toggle('active', tab==='subs');
   document.getElementById('searchField').style.display = tab==='list' ? 'flex' : 'none';
   render();
+  updateDeleteCardBtn();
 }
 
 // ---------- 이벤트 ----------
@@ -1130,13 +1159,14 @@ dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classLis
 fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleFiles(e.target.files); fileInput.value=''; });
 document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('monthSel').addEventListener('change', () => { listPage = 1; render(); });
-document.getElementById('cardSel').addEventListener('change', () => { listPage = 1; render(); });
+document.getElementById('cardSel').addEventListener('change', () => { listPage = 1; render(); updateDeleteCardBtn(); });
 document.getElementById('searchBox').addEventListener('input', () => { listPage = 1; render(); });
 document.querySelectorAll('#mainTabs .tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 document.getElementById('addTxBtn').addEventListener('click', openAddTx);
 document.getElementById('reclassifyBtn').addEventListener('click', runReclassify);
 document.getElementById('exportBtn').addEventListener('click', exportCSV);
+document.getElementById('deleteCardBtn').addEventListener('click', deleteByCard);
 document.getElementById('txCancelBtn').addEventListener('click', closeTxModal);
 document.getElementById('txSaveBtn').addEventListener('click', saveTxModal);
 document.getElementById('txDeleteBtn').addEventListener('click', deleteFromModal);
